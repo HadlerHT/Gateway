@@ -11,11 +11,13 @@ extern "C" void app_main(void) {
     modbus.setTargetServerIP("192.168.0.9", false);
 
     txMbPacket request;
-        request.packetLength = 6;
+        request.packetLength = 11;
         request.slaveID = 1;
-        request.function = 1;
+        request.function = 15;
         request.targetOffset = 0;
-        request.targetSize = 16;
+        request.targetSize = 32;
+        request.dataLength = 4;
+        request.data = {0xAA, 0xBB, 0xCC, 0xDD};
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
