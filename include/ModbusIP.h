@@ -1,7 +1,15 @@
 #pragma once
 
+#ifdef MODBUS_SERIAL
+#error "MULTIPLE VERSIONS OF MODBUS CORES INITILIZED"
+#endif
+#define MODBUS_IP
+
+// #define PRINT_PACKET_BYTESTREAMS
+
 #include <iostream>
 #include <vector>
+#include <optional>
 
 #include "sdkconfig.h"
 #include <string.h>
@@ -13,37 +21,35 @@
 #include "esp_netif.h"
 #include "esp_log.h"
 
-#include "datatypes.h"
-#include "modbuscore.h"
+#include "DataTypes.h"
+#include "ModbusCore.h"
 
-struct TxMbPacket : ModbusCore::txMbFormat {
+typedef struct : ModbusCore::txMbFormat {
     uint16 transmissionID = 0x0000;
     uint16 protocolID = 0x0000;
     uint16 packetLength;
-};
+} txMbPacket;
 
-struct RxMbPacket : ModbusCore::txMbFormat {
+typedef struct : ModbusCore::txMbFormat {
     uint16 transmissionID = 0x0000;
     uint16 protocolID = 0x0000;
     uint16 packetLength;
-};
+} rxMbPacket;
 
-typedef struct TxMbPacket txMbPacket;
-typedef struct RxMbPacket rxMbPacket;
 typedef int webSocket;
 
-class ModbusTCPIP : public ModbusCore {
+class ModbusIP : public ModbusCore {
 
     public:
-        ModbusTCPIP();
-        // void run();
+        ModbusIP();
 
         bool setTargetServerIP(std::string, bool);
+        
         void sendRequestPacket(txMbPacket&);
-        rxMbPacket getResponsePacket(bool);
+        std::optional<rxMbPacket> getResponsePacket();
 
     private:
-        const char* TAG = "Modbus Core";
+        const char* TAG = "Modbus TCP/IP";
         webSocket mbSocket = -1;
         struct sockaddr_in targetServer;
 

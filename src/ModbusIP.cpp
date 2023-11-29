@@ -1,6 +1,6 @@
-#include "modbustcpip.h"
+#include "ModbusIP.h"
 
-ModbusTCPIP::ModbusTCPIP() {
+ModbusIP::ModbusIP() {
 
     targetServer = {
         .sin_family = AF_INET,
@@ -11,14 +11,14 @@ ModbusTCPIP::ModbusTCPIP() {
     openSocket();
 }
 
-void ModbusTCPIP::closeSocket() {
+void ModbusIP::closeSocket() {
 
     ESP_LOGE(TAG, "Shutting down socket");
     shutdown(mbSocket, 0);
     close(mbSocket);
 }
 
-bool ModbusTCPIP::openSocket() {
+bool ModbusIP::openSocket() {
     
     mbSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     
@@ -31,7 +31,7 @@ bool ModbusTCPIP::openSocket() {
     return false;
 }
 
-bool ModbusTCPIP::setTargetServerIP(std::string ipStr, bool closeFirst = false) {
+bool ModbusIP::setTargetServerIP(std::string ipStr, bool closeFirst = false) {
 
     if (closeFirst)
         closeSocket();
@@ -48,7 +48,7 @@ bool ModbusTCPIP::setTargetServerIP(std::string ipStr, bool closeFirst = false) 
     return true;
 }
 
-void ModbusTCPIP::sendRequestPacket(txMbPacket& payload) {
+void ModbusIP::sendRequestPacket(txMbPacket& payload) {
 
     byteStream stream = serializePacket(payload);
 
@@ -57,15 +57,15 @@ void ModbusTCPIP::sendRequestPacket(txMbPacket& payload) {
         ESP_LOGE(TAG, "Error occurred during sending. errno %d", errno);
 }
 
-byteStream ModbusTCPIP::serializePacket(txMbPacket& tx) {
+byteStream ModbusIP::serializePacket(txMbPacket& tx) {
     
     byteStream serializedPacket;
-
     serializedPacket = {
         high(tx.transmissionID), low(tx.transmissionID),
         high(tx.protocolID), low(tx.protocolID),
         high(tx.packetLength), low(tx.packetLength),
-        tx.slaveID, tx.function, 
+        tx.slaveID,
+        tx.function, 
         high(tx.targetOffset), low(tx.targetOffset),
         high(tx.targetSize), low(tx.targetSize)
     };
@@ -77,36 +77,38 @@ byteStream ModbusTCPIP::serializePacket(txMbPacket& tx) {
             serializedPacket.push_back(byte);
     }
 
+#ifdef PRINT_PACKET_BYTESTREAMS
     printf("TX: ");
     for (uint8 byte : serializedPacket)
         printf("%02x ", byte);
     printf("\n");
-
+#endif
 
     return serializedPacket;
 }
 
-rxMbPacket ModbusTCPIP::getResponsePacket(bool printHex = false) {
+std::optional<rxMbPacket> ModbusIP::getResponsePacket() {
 
-    uint8 rxBuffer[50];
-    int len = recv(mbSocket, rxBuffer, sizeof(rxBuffer) - 1, 0);
-    if (len < 0)
+    uint8 rxBuffer[256];
+    int len = recv(mbSocket, rxBuffer, 255, 0);
+    if (len < 0) {
         ESP_LOGE(TAG, "Failed to receive data. errno %d", errno);
-
+        return std::nullopt;
+    }
+        
     byteStream stream(rxBuffer, rxBuffer + len);
 
-    if (printHex) {
-        printf("RX: ");
-        for (uint8 byte : stream)
-            printf("%02x ", byte);
-        printf("\n");
-    }
+#ifdef PRINT_PACKET_BYTESTREAMS
+    printf("RX: ");
+    for (uint8 byte : stream)
+        printf("%02x ", byte);
+    printf("\n");
+#endif
 
     return structurizeStream(stream);
-
 }
 
-rxMbPacket ModbusTCPIP::structurizeStream(byteStream& rx) {
+rxMbPacket ModbusIP::structurizeStream(byteStream& rx) {
 
     // TI PI PL AD FN -- OF TS ---- MF5 MF6 MF15 MF16 (W)
     // TI PI PL AD FN -- DL DT ---- MF1 MF2 MF3 MF4 (R)
@@ -125,7 +127,7 @@ rxMbPacket ModbusTCPIP::structurizeStream(byteStream& rx) {
         packet.data = byteStream(rx[9], rx[9] + packet.dataLength); 
     }
 
-    // Writring Functions: MF5, MF6, MF15, MF16
+    // Writing Functions: MF5, MF6, MF15, MF16
     else {
         packet.targetOffset = merge(rx[8], rx[9]);
         packet.targetSize = merge(rx[10], rx[11]);

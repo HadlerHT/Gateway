@@ -1,10 +1,12 @@
 #pragma once
 
-#include "datatypes.h"
+#include "DataTypes.h"
 
 class ModbusCore {
     
     public:
+        virtual ~ModbusCore() = default;
+
         uint8 high(uint16);
         uint8 low(uint16);
         uint16 merge(uint8, uint8);

@@ -1,4 +1,4 @@
-#include "modbuscore.h"
+#include "ModbusCore.h"
 
 uint8 ModbusCore::low(uint16 x) {
     return static_cast<uint8>(x);

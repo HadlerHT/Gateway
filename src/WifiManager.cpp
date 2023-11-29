@@ -1,4 +1,4 @@
-#include "wifimanager.h"
+#include "WifiManager.h"
 
 // Static member variable initialization
 EventGroupHandle_t WiFiManager::wifiEventGroup = nullptr;
