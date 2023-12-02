@@ -6,6 +6,15 @@ ModbusSerial::ModbusSerial() {
 
 void ModbusSerial::openUART() {
 
+    uartParams = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+
     ESP_ERROR_CHECK(uart_driver_install(UART_ID, 256, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(UART_ID, &uartParams));
     ESP_ERROR_CHECK(uart_set_pin(UART_ID, TX_PIN, RX_PIN, RTS_PIN, CTS_PIN));
@@ -24,10 +33,10 @@ std::optional<rxMbPacket> ModbusSerial::readRequestPacket() {
     
     uint8 rxBuffer[256];
     int len = uart_read_bytes(UART_ID, rxBuffer, 256, waitForResponseMs); 
-    if (len) {
-        ESP_LOGE(TAG, "Failed to receive data. errno %d", errno);
+    if (len)
+        // ESP_LOGE(TAG, "Failed to receive data. errno %d", errno);
         return std::nullopt;
-    }
+    
         
     byteStream stream(rxBuffer, rxBuffer + len);
 
@@ -39,7 +48,7 @@ std::optional<rxMbPacket> ModbusSerial::readRequestPacket() {
 #endif
 
     // Transmission Error Detected
-    if (evaluateCRC(stream, false))
+    if (evaluateCRC(stream))
         return std::nullopt;
 
     return structurizeStream(stream);
@@ -100,14 +109,14 @@ rxMbPacket ModbusSerial::structurizeStream(byteStream& rx) {
     return packet;
 }
 
-uint16 ModbusSerial::evaluateCRC(byteStream& stream, bool doAppend) {
+uint16 ModbusSerial::evaluateCRC(byteStream& stream, bool doAppend = false) {
     
-    const uint16 polynomial = 0xA001;
+    const uint16 polynomial = 0xA001; //Modbus Inverse Polynomial
     uint16 CRC = 0xFFFF;
 
     for (uint8 byte : stream) {
         CRC ^= byte;
-        for (uint8 i = 0; i < 0; i++)
+        for (uint8 i = 0; i < 8; i++)
             if (CRC & 0x01)
                 CRC = (CRC >> 1) ^ polynomial;
             else

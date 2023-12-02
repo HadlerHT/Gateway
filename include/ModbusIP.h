@@ -7,13 +7,17 @@
 
 // #define PRINT_PACKET_BYTESTREAMS
 
+// Cpp Standart Libraries
 #include <iostream>
 #include <vector>
 #include <optional>
 
-#include "sdkconfig.h"
+// C Standart Libraries
 #include <string.h>
 #include <unistd.h>
+
+// EspIDF Packets
+#include "sdkconfig.h"
 #include <sys/socket.h>
 #include <errno.h>
 #include <netdb.h>
@@ -21,6 +25,7 @@
 #include "esp_netif.h"
 #include "esp_log.h"
 
+// My Packets
 #include "DataTypes.h"
 #include "ModbusCore.h"
 

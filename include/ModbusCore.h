@@ -24,6 +24,4 @@ class ModbusCore {
             uint8 dataLength;
             byteStream data;
         };
-
-
 };

@@ -7,16 +7,19 @@
 
 // #define PRINT_PACKET_BYTESTREAMS
 
+// Cpp Standart Lybraries
 #include <iostream>
 #include <vector>
 #include <optional>
 
+// EspIDF Packets
 #include "freertos/FreeRTOS.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
 
+// My Packets
 #include "DataTypes.h"
 #include "ModbusCore.h"
 
@@ -36,7 +39,7 @@ typedef struct : ModbusCore::txMbFormat {
 
 enum Encoding {RTU, ASCII};
 
-class ModbusSerial : ModbusCore {
+class ModbusSerial : public ModbusCore {
 
     public:
         ModbusSerial();
@@ -44,26 +47,17 @@ class ModbusSerial : ModbusCore {
         std::optional<rxMbPacket> readRequestPacket();
 
     protected:
-        const char* TAG = "Modbus Serial";
-
-        uart_config_t uartParams = {
-            .baud_rate = 115200,
-            .data_bits = UART_DATA_8_BITS,
-            .parity    = UART_PARITY_DISABLE,
-            .stop_bits = UART_STOP_BITS_1,
-            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-            .source_clk = UART_SCLK_DEFAULT,
-        };
-        
+        uart_config_t uartParams;
         Encoding byteEncoding = RTU;
         uint16 waitForResponseMs = 1000 / portTICK_PERIOD_MS;
         uint8 t35ms = 1750 / portTICK_PERIOD_MS; //Min time between modbus frames
         uint8 t15ms = 750 / portTICK_PERIOD_MS; //Max time between modbus bytes
 
     private:
+        const char* TAG = "Modbus Serial";
+
         void openUART();
         byteStream serializePacket(txMbPacket&);
         rxMbPacket structurizeStream(byteStream&);
         uint16 evaluateCRC(byteStream&, bool);
-
 };
