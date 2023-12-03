@@ -13,22 +13,16 @@
 #include "lwip/sys.h"
 #include "sdkconfig.h"
 
+#define WIFI_MAXIMUM_RETRY 5
 #define WIFI_CONNECTED_BIT BIT0     //  Connected to the AP with an IP
 #define WIFI_FAIL_BIT      BIT1     //  Failed to connect after the maximum amount of retries
-#define EXAMPLE_ESP_MAXIMUM_RETRY 5
 
-class WiFiManager {
-    public:
-        WiFiManager();
-        void connect();
+// Variable declarations
+extern EventGroupHandle_t wifi_eventGroup;
+extern wifi_config_t wifi_configure;
 
-    protected:
-        static EventGroupHandle_t wifiEventGroup;
-        static const char *TAG;
-        static int retryNumber;
-
-    private:
-        static void initializeStation();
-        static void eventRouter(void*, esp_event_base_t, int32_t, void*);
-        static void eventHandler(esp_event_base_t, int32_t, void*);
-};
+// Functions
+void wifi_espSetup();
+void wifi_initializeStation();
+void wifi_eventHandler(void*, esp_event_base_t, int32_t, void*);
+void wifi_disconnect();
