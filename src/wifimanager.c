@@ -9,6 +9,8 @@ static const char* TAG = "Wifi Station";
 
 // Variable definitions
 EventGroupHandle_t wifi_eventGroup;
+
+// WIFI Configuration
 wifi_config_t wifi_configure = {
     // https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_wifi.html
     .sta = {

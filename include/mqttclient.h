@@ -29,7 +29,7 @@ extern esp_mqtt_client_config_t mqtt_configure;
 
 void mqtt_clientStart();
 void mqtt_controlEventsHandler(void*, esp_event_base_t, int32_t, void*);
-void mqtt_dataEventHandler(void*, esp_event_base_t, int32_t, void*);
+// void mqtt_dataEventHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData);
+void mqtt_setDataEventHandler(esp_event_handler_t);
 
 void log_error_if_nonzero(const char*, int);
-
