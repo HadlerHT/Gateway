@@ -51,18 +51,20 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
 
     esp_mqtt_event_handle_t event = eventData;
 
-    // static uint16 cnt = 0;
-    printf("Topic: %.*s\n", event->topic_len, event->topic);
+    // printf("Topic: %.*s\n", event->topic_len, event->topic);
     
-    printf("HEX: ");
-    for (uint8 k = 0; k < event->data_len; k++)
-        printf("%02x ", event->data[k]);
-    printf("\n");
+    // printf("HEX: ");
+    // for (uint8 k = 0; k < event->data_len; k++)
+    //     printf("%02x ", event->data[k]);
+    // printf("\n");
 
-    printf("ASCII: ");
-    for (uint8 k = 0; k < event->data_len; k++)
-        printf("%c", event->data[k]);
-    printf("\n");
+    // printf("ASCII: ");
+    // for (uint8 k = 0; k < event->data_len; k++)
+    //     printf("%c", event->data[k]);
+    // printf("\n");
+
+
+    // ======== PARSE PAYLOAD ==========================================================
 
     // Evaluates the payload size in fields
     uint16 fieldCounter = 1;
@@ -85,15 +87,31 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
 
         char digitAsStr[] = {'0', '0', '0', '\0'};
         uint8 digitCounter = 3;
-        
+
         for (uint8 digitIndex = commaIndex - 1; event->data[digitIndex] != ','; digitIndex--)
                 digitAsStr[--digitCounter] = event->data[digitIndex];
 
         payload[field] = (uint8)atoi(digitAsStr);
     }   
+    // ======== END OF PARSE PAYLOAD ===================================================
+
+
+    // ======== ADD CRC TO PAYLOAD =====================================================
+
+    uint16 crc = modbus_evaluateCRC(payload, fieldCounter);
+
+    payload[fieldCounter] = low(crc);
+    payload[fieldCounter + 1] = high(crc);
+
+    // ======== END OF ADD CRC TO PAYLOAD ==============================================
+
+
+    // ======== SEND PARSED PAYLOAD ====================================================    
 
 
 
+
+    // ======== END OF SEND PARSED PAYLOAD =============================================
 
 
 
