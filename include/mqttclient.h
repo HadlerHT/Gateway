@@ -22,8 +22,10 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 
+#include "datatypes.h"
+
 // Variable declarations
-extern const char* mqtt_deviceTopic;
+extern const char* mqtt_deviceID;
 extern esp_mqtt_client_handle_t mqtt_client;
 extern esp_mqtt_client_config_t mqtt_configure;
 

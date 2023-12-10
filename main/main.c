@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "wifimanager.h"
 #include "mqttclient.h"
@@ -18,31 +19,26 @@
 // #define INTER_FRAME_TIMEOUT (1000000 / BAUD_RATE * 35 / 10)
 
 void gatewayHandler(void*, esp_event_base_t, int32_t, void*);
-int readModbusData(uart_port_t uart_num, uint8* buffer, size_t bufferSize, int interSymbolTimeoutMillis);
-
 
 void app_main(void) {
 
     wifi_espSetup();
     wifi_initializeStation();
     
-    uart_initiliaze();
-    
     mqtt_clientStart();
     mqtt_setDataEventHandler(gatewayHandler);
+
+    modbus_initialize();
 
     // uint8 pack[] = {0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00};
     // uint16 crc = modbus_evaluateCRC(pack, sizeof(pack) - 2);
     // pack[sizeof(pack)-1] = high(crc);
     // pack[sizeof(pack)-2] = low(crc);
-    
-    while(true) {
-    
-        // uart_sendRequestPacket(pack, sizeof(pack));
 
-        // for (unsigned k=0; k < sizeof(pack); k++)
-        //     printf("%02x ", pack[k]);
-        // printf("\n");
+    // uint8 buffer[264];
+    // modbus_readData(buffer, 264);
+
+    while(true) {
 
         vTaskDelay(100);
 
@@ -50,82 +46,92 @@ void app_main(void) {
 };
 
 
-
-// Function to read Modbus serial data with timeout detection
-int readModbusData(uart_port_t uart_num, uint8* buffer, size_t bufferSize, int interSymbolTimeoutMicros) {
-    int bytesRead = 0;
-    uint8 currentChar;
-
-
-    while (1) {
-        int uart_read_len = uart_read_bytes(uart_num, (uint8_t*)&currentChar, 1, 7); //pdUS_TO_TICKS(interSymbolTimeoutMicros));
-
-        if (uart_read_len == 0) {
-            // Timeout reached
-            break;
-        } 
-        else if (uart_read_len < 0) {
-            // Handle error
-            // uint8 TAG[] = "UART";
-            // ESP_LOGE(TAG, "UART read error: %s", esp_err_to_name(uart_read_len));
-            return -1;
-        } 
-        else {
-            // Character successfully read
-            buffer[bytesRead++] = currentChar;
-
-            // Check for buffer overflow
-            if (bytesRead >= bufferSize) {
-                break;
-            }
-        }
-    }
-
-    return bytesRead;
-}
-
-
-
-
 // This function is called every time a message is published on this device mqtt topic
 void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData) {   
 
     esp_mqtt_event_handle_t event = eventData;
-    static uint16 cnt = 0;
+
+    // static uint16 cnt = 0;
+    printf("Topic: %.*s\n", event->topic_len, event->topic);
+    
+    printf("HEX: ");
+    for (uint8 k = 0; k < event->data_len; k++)
+        printf("%02x ", event->data[k]);
+    printf("\n");
+
+    printf("ASCII: ");
+    for (uint8 k = 0; k < event->data_len; k++)
+        printf("%c", event->data[k]);
+    printf("\n");
+
+    // Evaluates the payload size in fields
+    uint16 fieldCounter = 1;
+    for (uint16 k = 2; k < event->data_len; k++)
+        if (event->data[k] == ',')
+            fieldCounter++;
+
+    // Creates a buffer of adequate size to acomodate the data, + 2 bytes for CRC
+    uint8 payload[fieldCounter + 2];
+
+    // Helps simplify border case
+    event->data[0] = ',';
+    event->data[event->data_len - 1] = ',';
+
+    // Parses ASCII encoded packet to byte vector
+    uint16 commaIndex = 0;
+    for (uint16 field = 0; field < fieldCounter; field++) {
+
+        while(event->data[++commaIndex] != ',');
+
+        char digitAsStr[] = {'0', '0', '0', '\0'};
+        uint8 digitCounter = 3;
+        
+        for (uint8 digitIndex = commaIndex - 1; event->data[digitIndex] != ','; digitIndex--)
+                digitAsStr[--digitCounter] = event->data[digitIndex];
+
+        payload[field] = (uint8)atoi(digitAsStr);
+    }   
+
+
+
+
+
+
+    // , event->data_len, event->datae
 
     //-----------------------------------------------------
     
-    printf("MQTT(%d)\n", cnt++);
+    // printf("MQTT(%d)\n", cnt++);
+    // // for (unsigned k = 0; k < event->data_len; k++)
+    // //     printf("%02x ", event->data[k]);
+    // // printf("\n");
+
+    // int txlen = event->data_len + 2;
+    // uint8 request[txlen];
     // for (unsigned k = 0; k < event->data_len; k++)
-    //     printf("%02x ", event->data[k]);
+    //     request[k] = event->data[k];
+
+    // uint16 crc = modbus_evaluateCRC(request, txlen - 2);
+    // request[txlen - 1] = high(crc);
+    // request[txlen - 2] = low(crc);
+    
+    // printf("TX: ");
+    // for (unsigned k = 0; k < txlen; k++)
+    //     printf("%02x ", request[k]);
     // printf("\n");
 
-    int txlen = event->data_len + 2;
-    uint8 request[txlen];
-    for (unsigned k = 0; k < event->data_len; k++)
-        request[k] = event->data[k];
-
-    uint16 crc = modbus_evaluateCRC(request, txlen - 2);
-    request[txlen - 1] = high(crc);
-    request[txlen - 2] = low(crc);
+    // uart_sendRequestPacket(request, txlen);
     
-    printf("TX: ");
-    for (unsigned k = 0; k < txlen; k++)
-        printf("%02x ", request[k]);
-    printf("\n");
+    // //-----------------------------------------------------
+    // uint8 response[264];
+    // int rxlen = readModbusData(UART_ID, response, 264, 750);
 
-    uart_sendRequestPacket(request, txlen);
+
+    // // int rxlen = uart_readResponsePacket(response, 264);
     
-    //-----------------------------------------------------
-    uint8 response[264];
-    int rxlen = readModbusData(UART_ID, response, 264, 750);
-
-
-    // int rxlen = uart_readResponsePacket(response, 264);
-    
-    printf("RX: ");    
-    for (unsigned k=0; k < rxlen; k++)
-        printf("%02x ", response[k]);
-    printf("\n");
+    // printf("RX: ");    
+    // for (unsigned k=0; k < rxlen; k++)
+    //     printf("%02x ", response[k]);
+    // printf("\n");
 
 }

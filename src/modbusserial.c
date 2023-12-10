@@ -1,60 +1,101 @@
 #include "modbusserial.h"
 
-void modbus_serializePacket(mbPacket* payload, uint8** stream, uint16* streamSize) {
+// void modbus_serializePacket(mbPacket* payload, uint8** stream, uint16* streamSize) {
 
-    *streamSize = payload->dataSize ? payload->dataSize + 9 : 8;
+//     *streamSize = payload->dataSize ? payload->dataSize + 9 : 8;
 
-    // REMEMBER TO FREE THIS AFTER
-    printf("%d\n", *streamSize);
+//     // REMEMBER TO FREE THIS AFTER
+//     printf("%d\n", *streamSize);
     
+//     // *stream = (uint8*)malloc(*streamSize);
+//     // uint8* byteStream = (uint8*)malloc(*streamSize);
+//     if (*stream == NULL)
+//         return;
 
-    
-    // *stream = (uint8*)malloc(*streamSize);
-    // uint8* byteStream = (uint8*)malloc(*streamSize);
-    if (*stream == NULL)
-        return;
+//     // byteStream[0] = payload->slaveID;
+//     // byteStream[1] = payload->function;
+//     // byteStream[2] = high(payload->targetOffset);
+//     // byteStream[3] = low(payload->targetOffset);
+//     // byteStream[4] = high(payload->targetSize);
+//     // byteStream[5] = low(payload->targetSize);
+//     (*stream)[0] = payload->slaveID;
+//     (*stream)[1] = payload->function;
+//     (*stream)[2] = high(payload->targetOffset);
+//     (*stream)[3] = low(payload->targetOffset);
+//     (*stream)[4] = high(payload->targetSize);
+//     (*stream)[5] = low(payload->targetSize);
 
-    // byteStream[0] = payload->slaveID;
-    // byteStream[1] = payload->function;
-    // byteStream[2] = high(payload->targetOffset);
-    // byteStream[3] = low(payload->targetOffset);
-    // byteStream[4] = high(payload->targetSize);
-    // byteStream[5] = low(payload->targetSize);
-    (*stream)[0] = payload->slaveID;
-    (*stream)[1] = payload->function;
-    (*stream)[2] = high(payload->targetOffset);
-    (*stream)[3] = low(payload->targetOffset);
-    (*stream)[4] = high(payload->targetSize);
-    (*stream)[5] = low(payload->targetSize);
+//     for (int k = 0; k < 6; k++)
+//         printf ("%02x ", (*stream)[k]);
+//     printf("\n");
 
-    for (int k = 0; k < 6; k++)
-        printf ("%02x ", (*stream)[k]);
-    printf("\n");
+//     if (payload->dataSize > 0) {
+//         (*stream)[6] = payload->dataSize;
+//         // memcpy(&byteStream[7], payload->data, payload->dataSize);
 
-    if (payload->dataSize > 0) {
-        (*stream)[6] = payload->dataSize;
-        // memcpy(&byteStream[7], payload->data, payload->dataSize);
+//         for (uint16 byte = 0; byte < payload->dataSize; byte++)
+//             (*stream)[7 + byte] = 55;//payload->data[byte];
+//     }
 
-        for (uint16 byte = 0; byte < payload->dataSize; byte++)
-            (*stream)[7 + byte] = 55;//payload->data[byte];
+//     for (int k = 0; k < (*streamSize - 2); k++)
+//         printf ("%02x ", (*stream)[k]);
+//     printf("\n");
+
+//     uint16 crc = modbus_evaluateCRC(*stream, *streamSize - 2);
+//     (*stream)[*streamSize-2] = low(crc);
+//     (*stream)[*streamSize-1] = high(crc);
+
+//     printf("crc: ");
+//     for (int k = 0; k < (*streamSize); k++)
+//         printf ("%02x ", (*stream)[k]);
+//     printf("\n");
+
+//     return;
+//     // *stream = byteStream;
+// }
+
+uint16 interSymbolTimout_us = 750;
+uint16 interPacketTimeout_us = 1750;
+
+void modbus_initialize() {
+    uart_initiliaze();
+}
+
+// Function to read Modbus serial data with timeout detection
+uint16 modbus_readData(uint8* buffer, uint16 bufferSize) {
+
+    uint16 bytesRead = 0;
+    uint8 currentChar;
+
+    while (1) {
+
+        // 1 freertos tick, set to 1ms -----------------------------------------
+        // Expect one single byte per reading -------------------------------  |
+        // Char buffer cast as pointer -----------------                    |  |
+        //                                             |                    |  |  
+        int uart_readLen = uart_read_bytes(UART_ID, (uint8_t*)&currentChar, 1, 1);
+
+        // No byte arrived: assume end of packet
+        if (uart_readLen == 0)
+            break;
+        
+        // Unsuccessfull on reading byte
+        else if (uart_readLen < 0)
+            return -1;
+        
+        // Reading successfull
+        else {
+            buffer[bytesRead++] = currentChar;
+            
+            // Buffer overflow: shouldn't happen
+            if (bytesRead >= bufferSize)
+                break;
+        }
     }
 
-    for (int k = 0; k < (*streamSize - 2); k++)
-        printf ("%02x ", (*stream)[k]);
-    printf("\n");
-
-    uint16 crc = modbus_evaluateCRC(*stream, *streamSize - 2);
-    (*stream)[*streamSize-2] = low(crc);
-    (*stream)[*streamSize-1] = high(crc);
-
-    printf("crc: ");
-    for (int k = 0; k < (*streamSize); k++)
-        printf ("%02x ", (*stream)[k]);
-    printf("\n");
-
-    return;
-    // *stream = byteStream;
+    return bytesRead;
 }
+
 
 uint16 modbus_evaluateCRC(uint8* data, uint16 length) {
 

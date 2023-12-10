@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "uartmanager.h"
 
 typedef struct {
     uint8 slaveID;
@@ -15,7 +16,13 @@ typedef struct {
     // uint16 CRC;
 } mbPacket;
 
-void modbus_serializePacket(mbPacket*, uint8**, uint16*);
+extern uint16 interSymbolTimout_us;
+extern uint16 interPacketTimeout_us;
+
+void modbus_initialize();
+uint16 modbus_readData(uint8*, uint16);
+
+// void modbus_serializePacket(mbPacket*, uint8**, uint16*);
 uint16 modbus_evaluateCRC(uint8*, uint16);
 
 uint16 merge(uint8, uint8);

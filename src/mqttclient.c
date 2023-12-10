@@ -1,18 +1,18 @@
 #include "mqttclient.h"
 
 // Esp log
-static const char *TAG = "MQTT_EXAMPLE";
+static const char *TAG = "MQTT";
 
 // Variable definitions
 esp_mqtt_client_handle_t mqtt_client;
 
 // MQTT Configuration
-const char* mqtt_deviceTopic = "/device1";
+const char* mqtt_deviceID = "benchmark";
+
 esp_mqtt_client_config_t mqtt_configure = {
     .broker.address.uri = "mqtt://192.168.0.6",
     .broker.address.port = 1883,
 };
-
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -29,14 +29,21 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
     ESP_LOGD(TAG, "Event dispatched from event loop base=%s, eventId=%" PRIi32 "", base, eventId);
     
     esp_mqtt_event_handle_t event = eventData;
-    esp_mqtt_client_handle_t client = event->client;
-    int msgId;
-
+    
     switch ((esp_mqtt_event_id_t)eventId) {
     
     case MQTT_EVENT_CONNECTED:
-        msgId = esp_mqtt_client_subscribe(client, mqtt_deviceTopic, 0);
-        ESP_LOGI(TAG, "Sent subscribe successful, msgId=%d", msgId);
+        
+        // char topicToSubscribe[sizeof(mqtt_deviceID) + 16];
+        // sprintf(topicToSubscribe, "/mbnet/%s/mbbus", mqtt_deviceID);
+        
+        // printf('%.*s\n', sizeof(mqtt_deviceID) + 16, topicToSubscribe);
+
+        char topicToSubscribe[] = "/mbnet/benchmark/mbbus";
+
+        // qos = 2, deliver exactly once
+        int msgId = esp_mqtt_client_subscribe(event->client, topicToSubscribe, 2);
+        
         break;
     
     case MQTT_EVENT_DISCONNECTED:
@@ -44,7 +51,7 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
-        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msgId=%d", event->msg_id);
+        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED to %.*s, msgId=%d", event->topic_len, event->topic, event->msg_id);
         break;
 
     case MQTT_EVENT_UNSUBSCRIBED:
@@ -52,7 +59,7 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
         break;
     
     case MQTT_EVENT_PUBLISHED:
-        ESP_LOGI(TAG, "Published by self");
+        ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msgId=%d", event->msg_id);
         break;
     
     case MQTT_EVENT_ERROR:
@@ -66,7 +73,7 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
         break;
     
     default:
-        // ESP_LOGI(TAG, "Other event id:%d", event->event_id);
+        ESP_LOGI(TAG, "Other event id:%d", event->event_id);
         break;
     }
 }
@@ -87,9 +94,14 @@ void mqtt_clientStart() {
 
     mqtt_client = esp_mqtt_client_init(&mqtt_configure);
     
-    // Handler for control events in mqtt
-    esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_controlEventsHandler, NULL);
-    esp_mqtt_client_unregister_event(mqtt_client, MQTT_EVENT_DATA, mqtt_controlEventsHandler);
+    // Handler for control events in mqtt - all except mqtt_event_data
+    const esp_mqtt_event_id_t mqtt_eventsForInternalHandling[] = {
+        MQTT_EVENT_CONNECTED,  MQTT_EVENT_DISCONNECTED,
+        MQTT_EVENT_SUBSCRIBED, MQTT_EVENT_UNSUBSCRIBED,
+        MQTT_EVENT_PUBLISHED,  MQTT_EVENT_ERROR,
+    };
+    for (uint8 k = 0; k < 6; k++)
+        esp_mqtt_client_register_event(mqtt_client, mqtt_eventsForInternalHandling[k], mqtt_controlEventsHandler, NULL);
 
     esp_mqtt_client_start(mqtt_client);
 }
