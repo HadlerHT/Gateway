@@ -1,79 +1,28 @@
 #include "modbusserial.h"
 
-// void modbus_serializePacket(mbPacket* payload, uint8** stream, uint16* streamSize) {
-
-//     *streamSize = payload->dataSize ? payload->dataSize + 9 : 8;
-
-//     // REMEMBER TO FREE THIS AFTER
-//     printf("%d\n", *streamSize);
-    
-//     // *stream = (uint8*)malloc(*streamSize);
-//     // uint8* byteStream = (uint8*)malloc(*streamSize);
-//     if (*stream == NULL)
-//         return;
-
-//     // byteStream[0] = payload->slaveID;
-//     // byteStream[1] = payload->function;
-//     // byteStream[2] = high(payload->targetOffset);
-//     // byteStream[3] = low(payload->targetOffset);
-//     // byteStream[4] = high(payload->targetSize);
-//     // byteStream[5] = low(payload->targetSize);
-//     (*stream)[0] = payload->slaveID;
-//     (*stream)[1] = payload->function;
-//     (*stream)[2] = high(payload->targetOffset);
-//     (*stream)[3] = low(payload->targetOffset);
-//     (*stream)[4] = high(payload->targetSize);
-//     (*stream)[5] = low(payload->targetSize);
-
-//     for (int k = 0; k < 6; k++)
-//         printf ("%02x ", (*stream)[k]);
-//     printf("\n");
-
-//     if (payload->dataSize > 0) {
-//         (*stream)[6] = payload->dataSize;
-//         // memcpy(&byteStream[7], payload->data, payload->dataSize);
-
-//         for (uint16 byte = 0; byte < payload->dataSize; byte++)
-//             (*stream)[7 + byte] = 55;//payload->data[byte];
-//     }
-
-//     for (int k = 0; k < (*streamSize - 2); k++)
-//         printf ("%02x ", (*stream)[k]);
-//     printf("\n");
-
-//     uint16 crc = modbus_evaluateCRC(*stream, *streamSize - 2);
-//     (*stream)[*streamSize-2] = low(crc);
-//     (*stream)[*streamSize-1] = high(crc);
-
-//     printf("crc: ");
-//     for (int k = 0; k < (*streamSize); k++)
-//         printf ("%02x ", (*stream)[k]);
-//     printf("\n");
-
-//     return;
-//     // *stream = byteStream;
-// }
-
-uint16 interSymbolTimout_us = 750;
-uint16 interPacketTimeout_us = 1750;
+const uint16 interSymbolTimeout_ms = 1;
 
 void modbus_initialize() {
     uart_initiliaze();
 }
 
+void modbus_sendRequestPacket(uint8* data, uint16 length) {
+    uart_write_bytes(UART_ID, data, length);
+};
+
 // Function to read Modbus serial data with timeout detection
-uint16 modbus_readData(uint8* buffer, uint16 bufferSize) {
+uint16 modbus_readResponsePacket(uint8* buffer, uint16 bufferSize, uint16 timeOut) {
 
     uint16 bytesRead = 0;
     uint8 currentChar;
+    bool awaitingFirstByte = true;
 
-    while (1) {
-
-        // 1 freertos tick, set to 1ms -----------------------------------------
-        // Expect one single byte per reading -------------------------------  |
-        // Char buffer cast as pointer -----------------                    |  |
-        //                                             |                    |  |  
-        int uart_readLen = uart_read_bytes(UART_ID, (uint8_t*)&currentChar, 1, 1);
+    while (true) {
+        
+        // The line bellow is set up to await 'timeOut' for startuing receiving bytes,
+        // and then ~750us (rounded to 1ms here) for each next byte, following modbus rtu specs
+        int uart_readLen = uart_read_bytes(UART_ID, (uint8_t*)&currentChar, 1, 
+                                           awaitingFirstByte ? timeOut : interSymbolTimeout_ms);
 
         // No byte arrived: assume end of packet
         if (uart_readLen == 0)
@@ -92,10 +41,8 @@ uint16 modbus_readData(uint8* buffer, uint16 bufferSize) {
                 break;
         }
     }
-
     return bytesRead;
 }
-
 
 uint16 modbus_evaluateCRC(uint8* data, uint16 length) {
 

@@ -18,5 +18,3 @@
 extern uart_config_t uart_configure;
 
 void uart_initiliaze();
-void uart_sendRequestPacket(uint8*, uint16);
-uint16 uart_readResponsePacket(uint8*, uint16);

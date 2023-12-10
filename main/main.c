@@ -22,6 +22,8 @@ void gatewayHandler(void*, esp_event_base_t, int32_t, void*);
 
 void app_main(void) {
 
+    esp_log_level_set("*", ESP_LOG_INFO);
+
     wifi_espSetup();
     wifi_initializeStation();
     
@@ -29,50 +31,31 @@ void app_main(void) {
     mqtt_setDataEventHandler(gatewayHandler);
 
     modbus_initialize();
-
-    // uint8 pack[] = {0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00};
-    // uint16 crc = modbus_evaluateCRC(pack, sizeof(pack) - 2);
-    // pack[sizeof(pack)-1] = high(crc);
-    // pack[sizeof(pack)-2] = low(crc);
-
-    // uint8 buffer[264];
-    // modbus_readData(buffer, 264);
-
-    while(true) {
-
-        vTaskDelay(100);
-
-    };
 };
 
 
 // This function is called every time a message is published on this device mqtt topic
+// It handles the decoding of the message coming from mqtt
+// Sends it via uart to the modbus network and awaits the response
+// It then reencodes the message and sends it back to the mqtt broker
 void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData) {   
 
     esp_mqtt_event_handle_t event = eventData;
 
-    // printf("Topic: %.*s\n", event->topic_len, event->topic);
-    
-    // printf("HEX: ");
-    // for (uint8 k = 0; k < event->data_len; k++)
-    //     printf("%02x ", event->data[k]);
-    // printf("\n");
+    // Message sent by itself - IGNORE
+    if (event->data[0] == 0xFF)
+        return;
 
-    // printf("ASCII: ");
-    // for (uint8 k = 0; k < event->data_len; k++)
-    //     printf("%c", event->data[k]);
-    // printf("\n");
-
+    ESP_LOGI("TIME_DEBUG", "1");
 
     // ======== PARSE PAYLOAD ==========================================================
-
     // Evaluates the payload size in fields
     uint16 fieldCounter = 1;
-    for (uint16 k = 2; k < event->data_len; k++)
-        if (event->data[k] == ',')
+    for (uint16 chr = 1; chr < event->data_len; chr++)
+        if (event->data[chr] == ',')
             fieldCounter++;
 
-    // Creates a buffer of adequate size to acomodate the data, + 2 bytes for CRC
+    // Creates a buffer of adequate size to acomodate the data, +2 bytes for CRC
     uint8 payload[fieldCounter + 2];
 
     // Helps simplify border case
@@ -85,71 +68,63 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
 
         while(event->data[++commaIndex] != ',');
 
-        char digitAsStr[] = {'0', '0', '0', '\0'};
+        char valueAsStr[] = {'0', '0', '0', '\0'};
         uint8 digitCounter = 3;
 
         for (uint8 digitIndex = commaIndex - 1; event->data[digitIndex] != ','; digitIndex--)
-                digitAsStr[--digitCounter] = event->data[digitIndex];
+            valueAsStr[--digitCounter] = event->data[digitIndex];
 
-        payload[field] = (uint8)atoi(digitAsStr);
+        payload[field] = (uint8)atoi(valueAsStr);
     }   
     // ======== END OF PARSE PAYLOAD ===================================================
-
+    
+    ESP_LOGI("TIME_DEBUG", "2");
 
     // ======== ADD CRC TO PAYLOAD =====================================================
-
     uint16 crc = modbus_evaluateCRC(payload, fieldCounter);
 
     payload[fieldCounter] = low(crc);
     payload[fieldCounter + 1] = high(crc);
-
     // ======== END OF ADD CRC TO PAYLOAD ==============================================
 
+    ESP_LOGI("TIME_DEBUG", "3");
 
-    // ======== SEND PARSED PAYLOAD ====================================================    
+    // ======== SEND PAYLOAD TO UART AND AWAIT RESPONSE ================================    
+    uint8 response[265];
+    int responseLen;
 
-
-
-
-    // ======== END OF SEND PARSED PAYLOAD =============================================
-
-
-
-    // , event->data_len, event->datae
-
-    //-----------------------------------------------------
+    for (uint8 attemps = 0; attemps < 3; attemps++) {
     
-    // printf("MQTT(%d)\n", cnt++);
-    // // for (unsigned k = 0; k < event->data_len; k++)
-    // //     printf("%02x ", event->data[k]);
-    // // printf("\n");
+        modbus_sendRequestPacket(payload , sizeof(payload));
+        responseLen = modbus_readResponsePacket((uint8*)(response + 1), 264, 500); //Timeout of 500ms
 
-    // int txlen = event->data_len + 2;
-    // uint8 request[txlen];
-    // for (unsigned k = 0; k < event->data_len; k++)
-    //     request[k] = event->data[k];
+        printf("%d \n", responseLen);
 
-    // uint16 crc = modbus_evaluateCRC(request, txlen - 2);
-    // request[txlen - 1] = high(crc);
-    // request[txlen - 2] = low(crc);
-    
-    // printf("TX: ");
-    // for (unsigned k = 0; k < txlen; k++)
-    //     printf("%02x ", request[k]);
-    // printf("\n");
+        // If the response is non-null and the modbus checks out: success
+        if (responseLen > 0 && !modbus_evaluateCRC(response, responseLen))
+            break;
+    }
+    // ======== END OF SEND PAYLOAD TO UART AND AWAIT RESPONSE =========================
 
-    // uart_sendRequestPacket(request, txlen);
-    
-    // //-----------------------------------------------------
-    // uint8 response[264];
-    // int rxlen = readModbusData(UART_ID, response, 264, 750);
+    ESP_LOGI("TIME_DEBUG", "4");
 
+    // ======== ERROR HANDLING =========================================================
+    if (responseLen < 1) {
+        strcpy((char*)response, "_{\"status\":\"error\"}");
+        responseLen = sizeof(response);
+    }
+    // ======== END OF ERROR HANDLING ==================================================
 
-    // // int rxlen = uart_readResponsePacket(response, 264);
-    
-    // printf("RX: ");    
-    // for (unsigned k=0; k < rxlen; k++)
-    //     printf("%02x ", response[k]);
-    // printf("\n");
+    ESP_LOGI("TIME_DEBUG", "5");
 
+    // ======== PUBLISH MESSAGE TO MQTT TOPIC ==========================================
+    // Indicating that this packet was created on the esp32, mqtt flow control
+    // This cannot be confused with the slave id because 0xFF is out of bounds for that field
+    response[0] = 0xFF; 
+
+    // Publish: control + payload - crc
+    mqtt_publishMessage((char*)response, responseLen-1);
+    // ======== PUBLISH MESSAGE TO MQTT TOPIC ==========================================
+
+    ESP_LOGI("TIME_DEBUG", "6");
 }

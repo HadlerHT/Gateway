@@ -28,14 +28,3 @@ void uart_initiliaze() {
 
 }
 
-
-void uart_sendRequestPacket(uint8* data, uint16 length) {
-    uart_write_bytes(UART_ID, data, length);
-};
-
-
-uint16 uart_readResponsePacket(uint8* data, uint16 length) {
-
-    int len = uart_read_bytes(UART_ID, data, length, 400/portTICK_PERIOD_MS); 
-    return len;
-};

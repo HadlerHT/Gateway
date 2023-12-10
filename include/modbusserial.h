@@ -16,13 +16,12 @@ typedef struct {
     // uint16 CRC;
 } mbPacket;
 
-extern uint16 interSymbolTimout_us;
-extern uint16 interPacketTimeout_us;
+extern const uint16 interSymbolTimeout_ms;
 
 void modbus_initialize();
-uint16 modbus_readData(uint8*, uint16);
+void modbus_sendRequestPacket(uint8*, uint16);
+uint16 modbus_readResponsePacket(uint8*, uint16, uint16);
 
-// void modbus_serializePacket(mbPacket*, uint8**, uint16*);
 uint16 modbus_evaluateCRC(uint8*, uint16);
 
 uint16 merge(uint8, uint8);

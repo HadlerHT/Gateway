@@ -7,12 +7,14 @@ static const char *TAG = "MQTT";
 esp_mqtt_client_handle_t mqtt_client;
 
 // MQTT Configuration
-const char* mqtt_deviceID = "benchmark";
+const char mqtt_deviceID[] = "benchmark";
+char mqtt_topic[sizeof(mqtt_deviceID) + 20];
 
 esp_mqtt_client_config_t mqtt_configure = {
     .broker.address.uri = "mqtt://192.168.0.6",
     .broker.address.port = 1883,
 };
+
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -33,17 +35,10 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
     switch ((esp_mqtt_event_id_t)eventId) {
     
     case MQTT_EVENT_CONNECTED:
-        
-        // char topicToSubscribe[sizeof(mqtt_deviceID) + 16];
-        // sprintf(topicToSubscribe, "/mbnet/%s/mbbus", mqtt_deviceID);
-        
-        // printf('%.*s\n', sizeof(mqtt_deviceID) + 16, topicToSubscribe);
+        sprintf(mqtt_topic, "/mbnet/%.*s/mbbus", sizeof(mqtt_deviceID), mqtt_deviceID);
+        printf("%.*s\n", sizeof(mqtt_deviceID) + 16, mqtt_topic);
 
-        char topicToSubscribe[] = "/mbnet/benchmark/mbbus";
-
-        // qos = 2, deliver exactly once
-        int msgId = esp_mqtt_client_subscribe(event->client, topicToSubscribe, 2);
-        
+        esp_mqtt_client_subscribe(event->client, mqtt_topic, 2);        
         break;
     
     case MQTT_EVENT_DISCONNECTED:
@@ -51,7 +46,7 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
-        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED to %.*s, msgId=%d", event->topic_len, event->topic, event->msg_id);
+        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msgId=%d", event->msg_id);
         break;
 
     case MQTT_EVENT_UNSUBSCRIBED:
@@ -78,18 +73,6 @@ void mqtt_controlEventsHandler(void *handlerArgs, esp_event_base_t base, int32_t
     }
 }
 
-// void mqtt_dataEventHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData) {
-
-//     esp_mqtt_event_handle_t event = eventData;
-//     // esp_mqtt_client_handle_t client = event->client;
-//     // int msgId;
-
-//     ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-//     printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-//     printf("DATA=%.*s\r\n", event->data_len, event->data);
-
-// }
-
 void mqtt_clientStart() {
 
     mqtt_client = esp_mqtt_client_init(&mqtt_configure);
@@ -106,9 +89,11 @@ void mqtt_clientStart() {
     esp_mqtt_client_start(mqtt_client);
 }
 
-void mqtt_setDataEventHandler(esp_event_handler_t handler) {
+void mqtt_publishMessage(char* payload, uint16 payloadLen) {
+    esp_mqtt_client_publish(mqtt_client, mqtt_topic, payload, payloadLen, 2, false);
+}
 
-    // Handler for data event in mqtt
+void mqtt_setDataEventHandler(esp_event_handler_t handler) {
     esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_DATA, handler, NULL);
 }
 
