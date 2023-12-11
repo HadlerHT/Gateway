@@ -13,6 +13,13 @@
 #include <freertos/task.h>
 #include <driver/uart.h>
 
+
+#include "freertos/FreeRTOS.h"
+#include "driver/uart.h"
+#include "driver/gpio.h"
+#include "sdkconfig.h"
+#include "esp_log.h"
+
 // Inter-character timeout (1.5 character times)
 // #define INTER_CHARACTER_TIMEOUT (1000000 / BAUD_RATE * 15 / 10)
 // Inter-frame timeout (3.5 character times)
@@ -46,7 +53,9 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
     if (event->data[0] == 0xFF)
         return;
 
-    ESP_LOGI("TIME_DEBUG", "1");
+    ESP_LOGI("MQTTHANDLER", "");
+
+    // ESP_LOGI("TIME_DEBUG", "1");
 
     // ======== PARSE PAYLOAD ==========================================================
     // Evaluates the payload size in fields
@@ -78,7 +87,7 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
     }   
     // ======== END OF PARSE PAYLOAD ===================================================
     
-    ESP_LOGI("TIME_DEBUG", "2");
+    // ESP_LOGI("TIME_DEBUG", "2");
 
     // ======== ADD CRC TO PAYLOAD =====================================================
     uint16 crc = modbus_evaluateCRC(payload, fieldCounter);
@@ -87,35 +96,32 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
     payload[fieldCounter + 1] = high(crc);
     // ======== END OF ADD CRC TO PAYLOAD ==============================================
 
-    ESP_LOGI("TIME_DEBUG", "3");
+    // ESP_LOGI("TIME_DEBUG", "3");
 
     // ======== SEND PAYLOAD TO UART AND AWAIT RESPONSE ================================    
+        
     uint8 response[265];
     int responseLen;
-
     for (uint8 attemps = 0; attemps < 3; attemps++) {
-    
         modbus_sendRequestPacket(payload , sizeof(payload));
         responseLen = modbus_readResponsePacket((uint8*)(response + 1), 264, 500); //Timeout of 500ms
 
-        printf("%d \n", responseLen);
-
         // If the response is non-null and the modbus checks out: success
-        if (responseLen > 0 && !modbus_evaluateCRC(response, responseLen))
+        if (responseLen > 0 && !modbus_evaluateCRC((uint8*)(response + 1), responseLen))
             break;
     }
     // ======== END OF SEND PAYLOAD TO UART AND AWAIT RESPONSE =========================
 
-    ESP_LOGI("TIME_DEBUG", "4");
+    // ESP_LOGI("TIME_DEBUG", "4");
 
     // ======== ERROR HANDLING =========================================================
     if (responseLen < 1) {
         strcpy((char*)response, "_{\"status\":\"error\"}");
-        responseLen = sizeof(response);
+        responseLen = 20;
     }
     // ======== END OF ERROR HANDLING ==================================================
 
-    ESP_LOGI("TIME_DEBUG", "5");
+    // ESP_LOGI("TIME_DEBUG", "5");
 
     // ======== PUBLISH MESSAGE TO MQTT TOPIC ==========================================
     // Indicating that this packet was created on the esp32, mqtt flow control
@@ -126,5 +132,5 @@ void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, v
     mqtt_publishMessage((char*)response, responseLen-1);
     // ======== PUBLISH MESSAGE TO MQTT TOPIC ==========================================
 
-    ESP_LOGI("TIME_DEBUG", "6");
+    // ESP_LOGI("TIME_DEBUG", "6");
 }

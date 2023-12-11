@@ -1,47 +1,24 @@
 #include "modbusserial.h"
 
-const uint16 interSymbolTimeout_ms = 1;
+const uint16 interSymbolTimeout_ms = 10;
 
 void modbus_initialize() {
     uart_initiliaze();
 }
 
 void modbus_sendRequestPacket(uint8* data, uint16 length) {
+
+    uart_flush(UART_ID);
     uart_write_bytes(UART_ID, data, length);
+
+    // Cleans up wrong byte read by the transition on RS485 flow control
+    vTaskDelay(5); 
+    uart_flush_input(UART_ID); 
 };
 
 // Function to read Modbus serial data with timeout detection
 uint16 modbus_readResponsePacket(uint8* buffer, uint16 bufferSize, uint16 timeOut) {
-
-    uint16 bytesRead = 0;
-    uint8 currentChar;
-    bool awaitingFirstByte = true;
-
-    while (true) {
-        
-        // The line bellow is set up to await 'timeOut' for startuing receiving bytes,
-        // and then ~750us (rounded to 1ms here) for each next byte, following modbus rtu specs
-        int uart_readLen = uart_read_bytes(UART_ID, (uint8_t*)&currentChar, 1, 
-                                           awaitingFirstByte ? timeOut : interSymbolTimeout_ms);
-
-        // No byte arrived: assume end of packet
-        if (uart_readLen == 0)
-            break;
-        
-        // Unsuccessfull on reading byte
-        else if (uart_readLen < 0)
-            return -1;
-        
-        // Reading successfull
-        else {
-            buffer[bytesRead++] = currentChar;
-            
-            // Buffer overflow: shouldn't happen
-            if (bytesRead >= bufferSize)
-                break;
-        }
-    }
-    return bytesRead;
+    return uart_read_bytes(UART_ID, buffer, bufferSize, timeOut);
 }
 
 uint16 modbus_evaluateCRC(uint8* data, uint16 length) {
