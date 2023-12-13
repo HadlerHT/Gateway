@@ -9,23 +9,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <driver/uart.h>
+#include <freertos/semphr.h>
 
+void mqtt_dataEventHandler(void*, esp_event_base_t, int32_t, void*);
+// void gatewayHandlerTask(void*);
+void gatewayHandler (esp_mqtt_event_handle_t);
 
-#include "freertos/FreeRTOS.h"
-#include "driver/uart.h"
-#include "driver/gpio.h"
-#include "sdkconfig.h"
-#include "esp_log.h"
-
-// Inter-character timeout (1.5 character times)
-// #define INTER_CHARACTER_TIMEOUT (1000000 / BAUD_RATE * 15 / 10)
-// Inter-frame timeout (3.5 character times)
-// #define INTER_FRAME_TIMEOUT (1000000 / BAUD_RATE * 35 / 10)
-
-void gatewayHandler(void*, esp_event_base_t, int32_t, void*);
+// SemaphoreHandle_t gatewaySemaphore;
+esp_mqtt_event_handle_t mqttEventData;
 
 void app_main(void) {
 
@@ -35,9 +29,23 @@ void app_main(void) {
     wifi_initializeStation();
     
     mqtt_clientStart();
-    mqtt_setDataEventHandler(gatewayHandler);
+    mqtt_setDataEventHandler(mqtt_dataEventHandler);
 
     modbus_initialize();
+
+    // ESP_LOGI("DEBUG", "IM HEREEEEEEEE");
+
+    // gatewaySemaphore = xSemaphoreCreateBinary();
+    // if (gatewaySemaphore == NULL)
+    //     ESP_LOGE("RTOS", "Semaphore cant be initialized");
+
+    // xTaskCreate(gatewayHandlerTask, "GatewayHandlerTask", 4000, NULL, 5, NULL);
+
+    // ESP_LOGI("RTOS", "Free heap before starting scheduler: %ld bytes", esp_get_free_heap_size());
+    // vTaskStartScheduler();
+    // ESP_LOGI("RTOS", "Free heap after starting scheduler: %ld bytes", esp_get_free_heap_size());
+
+    // vTaskStartScheduler(); 
 };
 
 
@@ -45,13 +53,33 @@ void app_main(void) {
 // It handles the decoding of the message coming from mqtt
 // Sends it via uart to the modbus network and awaits the response
 // It then reencodes the message and sends it back to the mqtt broker
-void gatewayHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData) {   
+void mqtt_dataEventHandler(void *handlerArgs, esp_event_base_t base, int32_t eventId, void *eventData) {   
 
-    esp_mqtt_event_handle_t event = eventData;
-
+    mqttEventData = eventData;
+    
     // Message sent by itself - IGNORE
-    if (event->data[0] == 0xFF)
+    if (mqttEventData->data[0] == 0xFF)
         return;
+    
+    gatewayHandler(eventData);
+    // xSemaphoreGive(gatewaySemaphore);
+}
+
+
+// // Task function
+// void gatewayHandlerTask(void *pvParameters) {
+//     while (true) {
+//         if (xSemaphoreTake(gatewaySemaphore, portMAX_DELAY)) {
+
+//             gatewayHandler(mqttEventData);
+
+//             xSemaphoreGive(gatewaySemaphore);
+//         }
+//     }
+// }
+
+
+void gatewayHandler (esp_mqtt_event_handle_t event) {
 
     ESP_LOGI("MQTTHANDLER", "");
 
