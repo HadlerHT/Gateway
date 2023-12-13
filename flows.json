@@ -1,0 +1,611 @@
+[
+    {
+        "id": "8c8e81caf2f0b83d",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "dec28d5816953c3b",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "localhost",
+        "port": "1883",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "59fcd83f02cb3ef3",
+        "type": "aedes broker",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "mqtt_port": 1883,
+        "mqtt_ws_bind": "port",
+        "mqtt_ws_port": "",
+        "mqtt_ws_path": "",
+        "cert": "",
+        "key": "",
+        "certname": "",
+        "keyname": "",
+        "persistence_bind": "memory",
+        "dburl": "",
+        "usetls": false,
+        "x": 170,
+        "y": 200,
+        "wires": [
+            [],
+            []
+        ]
+    },
+    {
+        "id": "6b7e7a17a6eed6e7",
+        "type": "mqtt in",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "/mbnet/+/request",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "dec28d5816953c3b",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 300,
+        "wires": [
+            [
+                "5c52febb781572e1",
+                "2047dd06df8c3848"
+            ]
+        ]
+    },
+    {
+        "id": "315cdf69c5063df0",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "createWritingMbPacket",
+        "func": "function sortByArray(indexArray, valueArray) {\n\n    // Create an array of objects, each containing the index and auxiliary values\n    const combinedArray = indexArray.map((value, index) => [\n        indexArray[index], valueArray[index]\n    ]);\n\n    // Sort based on index\n    combinedArray.sort((a, b) => a[0] - b[0]);\n\n    return [\n        combinedArray.map(subArray => subArray[0]),\n        combinedArray.map(subArray => subArray[1]),\n    ]\n}\n\nfunction createRangesFromComposite(array) {\n    let ranges = [];\n    let values = [];\n    let start = 0;\n\n    for (let index = 0; index < array[0].length; index++) {\n        if (array[0][index] + 1 !== array[0][index + 1]) {\n            ranges.push([array[0][start], array[0][index]]);\n            values.push(array[1].slice(start, index + 1));\n            start = index + 1;\n        }\n    }\n\n    console.log(ranges);\n\n    return {\n        \"ranges\": ranges,\n        \"values\": values\n    };\n}\n\n// ===============================================================\nfunction processPacket() {\n\n    let packet = [];\n\n    let targetOffset = msg.payload.range[0];\n    let targetSize = msg.payload.range[1] - msg.payload.range[0] + 1;\n\n    console.log(\"DEBUG\");\n\n    // === PUSHES SLAVE ID ===========================================\n    packet.push(msg.payload.id);\n    // ===============================================================\n\n    console.log(\"DEBUG\");\n\n    // === DEFINES MODBUS FUNCTION ===================================\n    //                    wsbo  wsno  wmbo  wmno\n    const wMbFunctions = [0x05, 0x06, 0x0F, 0x10];\n\n    let index = 0;\n    if (targetSize > 1)\n        index += 2;\n\n    if (msg.payload.type[0] == 'n')\n        index += 1;\n\n    packet.push(wMbFunctions[index]);\n    // ===============================================================\n\n    console.log(\"DEBUG\");\n\n    // === ADDS OFFSET, RANGE AND DATA ===============================\n    packet.push(...[targetOffset >> 8 & 0xFF, targetOffset & 0xFF]);\n\n    if (targetSize > 1) {\n\n        packet.push(...[targetSize >> 8 & 0xFF, targetSize & 0xFF]);\n\n        if (msg.payload.type[0] === 'n') {\n            // push byte counter\n            packet.push(msg.payload.data.length * 2);\n\n            // push data\n            for (let word = 0; word < msg.payload.data.length; word++)\n                packet.push(...[msg.payload.data[word] >> 8 & 0xFF, msg.payload.data[word] & 0xFF]);\n\n        }\n        else {\n            // push byte counter\n            packet.push(Math.ceil(msg.payload.data.length / 8));\n\n            // push data\n            let byte = 0, bitCounter = 0;\n            for (let bit of msg.payload.data) {\n                byte |= (bit ? 0x01 : 0x00) << bitCounter++;\n\n                if (bitCounter == 8) {\n                    bitCounter = 0;\n                    packet.push(byte);\n                    byte = 0;\n                }\n            }\n            if (bitCounter !== 0)\n                packet.push(byte);\n        }\n    }\n    else {\n        let value = Array.isArray(msg.payload.data) ? parseInt(msg.payload.data[0]) : parseInt(msg.payload.data);\n\n        // if function\n        if (msg.payload.type[0] === 'b')\n            packet.push(...(value ? [0xFF, 0x00] : [0x00, 0x00]));\n        else\n            packet.push(...[value >> 8 & 0xFF, value >> 0xFF]);\n    }\n    // ===============================================================\n\n    console.log(\"DEBUG\");\n\n    msg.payload = packet\n    node.send(msg);\n}\n\n// let payloadBackup = msg.payload;\n\n// === CONVERTS LIST INTO RANGE ==================================\n// if (msg.payload.hasOwnProperty('list')) {\n\n    // const indexes = Array.from(msg.payload.list);\n    // const values = Array.from(msg.payload.data);\n\n    // console.log(indexes, values);\n    // let writingSteps = createRangesFromComposite(sortByArray(indexes, values));\n\n    // delete msg.payload.list;\n\n    // console.log('DEBUG', writingSteps.ranges, writingSteps.values);\n\n    // for (let i = 0; i < writingSteps.ranges.length; i++) {\n\n    //     console.log(i, writingSteps.ranges[i], writingSteps.values[i]);\n\n    //     msg.payload = payloadBackup;\n    //     msg.payload.range = writingSteps.ranges[i];\n    //     msg.payload.data = writingSteps.values[i];\n    //     delete msg.payload.list;\n\n    //     console.log(msg);\n    //     processPacket();  \n    // }\n// }\n// else {\n    \n// }\nif (msg.payload.hasOwnProperty('list')) {\n    msg.payload.range = [0, 0];\n    msg.payload.range[0] = Math.min(...msg.payload.list);\n    msg.payload.range[1] = Math.max(...msg.payload.list);\n}\nprocessPacket();\n\nreturn;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 380,
+        "wires": [
+            [
+                "ccba98d01b5c7037",
+                "4ac8207d506f04c3"
+            ]
+        ]
+    },
+    {
+        "id": "d17f7402ac4e8e0b",
+        "type": "mqtt out",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "",
+        "qos": "2",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "dec28d5816953c3b",
+        "x": 1310,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "4eef388f18702af5",
+        "type": "mqtt in",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "/mbnet/+/mbbus",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "dec28d5816953c3b",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 520,
+        "wires": [
+            [
+                "81e84776e462acd7",
+                "03c565dca1315328"
+            ]
+        ]
+    },
+    {
+        "id": "38988c30a467d06b",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "validateRequest",
+        "func": "/**\n * Evaluate exclusive or (XOR).\n * \n * @param {boolean} a\n * @param {boolean} b\n * @returns {boolean}\n */\nfunction xor(a, b) {\n    return a && !b || !a && b;\n}\n\n/**\n * Send an error response with a specified error message.\n * \n * @param {string} errorMsg - The error message to include in the response.\n */\nfunction sendError(errorMsg) {\n    // Initialize msg.error as an array if it doesn't exist\n    if (msg.payload.status != 'Error') {\n        msg.payload.status = 'Error';\n        msg.payload.message = [];\n    }\n        \n    msg.payload.message.push(errorMsg);\n}\n\n/**\n * Check if a specified parameter exists in the incoming message payload.\n * If the parameter doesn't exist, send an error response.\n * \n * @param {string} parameter - The parameter to check in the payload.\n * @param {string} errorMsg - The error message to send if the parameter is missing.\n * @returns {boolean} - True if the parameter exists, false otherwise.\n */\nfunction checkFor(parameter, errorMsg) {\n    let tag = msg.payload.hasOwnProperty(parameter);\n    if (!tag)\n        sendError(errorMsg);\n    else\n        return tag;\n}\n\n/**\n * Validate the 'id' parameter.\n */\nfunction validateId() {\n    checkFor('id', 'Device was not specified');\n    if (msg.payload.id < 1 || msg.payload.id > 247)\n        sendError('Invalid Device');\n}\n\n/**\n * Validate the 'do' (function) parameter.\n */\nfunction validateFunction() {\n    checkFor('do', 'Function not specified');\n\n    const acceptedFunctions = [\n        'write', 'w', \n        'read', 'r'\n    ];\n    if (!acceptedFunctions.includes(msg.payload.do))\n        sendError('Invalid or unimplemented function');\n\n    // Logic to tokenize function\n    let index = acceptedFunctions.indexOf(msg.payload.do);\n    if ((index & 1) === 0)\n        msg.payload.do = acceptedFunctions[index + 1];\n}\n\n/**\n * Validate the 'type' parameter.\n */\nfunction validateType() {\n    checkFor('type', 'Target type not specified');\n\n    const acceptedTypes = [\n        'boolean', 'b', \n        'boolean-input', 'bi', \n        'boolean-output', 'bo', \n        'numeric', 'n', \n        'numeric-input', 'ni',\n        'numeric-output', 'no'\n    ];\n    if (!acceptedTypes.includes(msg.payload.type))\n        sendError('Invalid target type');\n\n    // Logic to tokenize type\n    let index = acceptedTypes.indexOf(msg.payload.type);\n    if ((index & 1) === 0)\n        msg.payload.type = acceptedTypes[index + 1];\n}\n\n/**\n * Validate the target parameter and handle related errors.\n */\nfunction validateTarget() {\n    // The request must have exactly one target specifier.\n    if (!xor(msg.payload.hasOwnProperty('list'), msg.payload.hasOwnProperty('range')))\n        sendError('Target not or overdefined.');\n\n    let hasDataField = msg.payload.hasOwnProperty('data');\n\n    if (hasDataField && msg.payload.do === 'r')\n        sendError(\"Unexpected data for reading function\");\n\n    else if (!hasDataField && msg.payload.do === 'w')\n        sendError('Missing data for writing target');\n    \n    else if (hasDataField && msg.payload.do === 'w') {\n\n        let targetLen = -1;\n\n        if (!Array.isArray(msg.payload.data))\n            sendError('Data could not be decoded');\n\n        else if (msg.payload.hasOwnProperty('range')) {            \n            if (!Array.isArray(msg.payload.range)) \n                sendError('Range could not be decoded');\n            else if (msg.payload.range.length !== 2)\n                sendError('Too many or too few parameters in range');\n            else if (msg.payload.range[0] > msg.payload.range[1])\n                sendError('Range end point is smaller then start point')\n            else\n                targetLen = msg.payload.range[1] - msg.payload.range[0] + 1;\n        }\n        else {\n            if (!Array.isArray(msg.payload.list))\n                sendError('List could not be decoded');\n            else \n                targetLen = msg.payload.list.length;\n        }\n\n        // The target size must match the data given\n        if (targetLen !== msg.payload.data.length)\n            sendError('Data size icompatible with target size');\n        \n        else if (targetLen > 127 && msg.payload.type[0] === 'n')\n            sendError('Target too big (>127) for numeric type');\n        \n        else if (targetLen > 2040 && msg.payload.type[0] == 'b')\n            sendError('Target too big (>2040) for boolean type');\n    }\n}\n\n/**\n * Process the incoming message and handle errors.\n */\nfunction processMessage() {\n    // Checks if incoming message is a non-empty JSON\n    if (typeof msg.payload !== 'object' || msg.payload === null)\n        sendError('Bad request format.');\n\n    validateId();\n    validateFunction();\n    validateType();\n    validateTarget();\n\n    // Set isresponse flag\n    // msg.isresponse = true;\n\n    // Send the appropriate response based on errors\n    if (msg.payload.status === 'Error') {\n        global.set('taskInProgress', false);\n        return node.send([msg, null]);\n    }\n    else {\n        global.set('lastRequest', msg.payload);\n        return node.send([null, msg]);\n    }\n}\n\nif (!msg.hasOwnProperty('isresponse'))\n    processMessage();\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 540,
+        "y": 320,
+        "wires": [
+            [
+                "a37555c50b392db4"
+            ],
+            [
+                "368eb7ab0911b824"
+            ]
+        ]
+    },
+    {
+        "id": "a37555c50b392db4",
+        "type": "mqtt out",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "dec28d5816953c3b",
+        "x": 710,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "368eb7ab0911b824",
+        "type": "switch",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "property": "payload.do",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "r",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "w",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 710,
+        "y": 360,
+        "wires": [
+            [
+                "f92d120dbc5ed36b"
+            ],
+            [
+                "315cdf69c5063df0"
+            ]
+        ]
+    },
+    {
+        "id": "f92d120dbc5ed36b",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "createReadingMbPacket",
+        "func": "let packet = [];\n\n// === CONVERTS LIST INTO RANGE ==================================\nif (msg.payload.hasOwnProperty('list')) {\n    msg.payload.range = [0, 0];\n    msg.payload.range[0] = Math.min(...msg.payload.list);\n    msg.payload.range[1] = Math.max(...msg.payload.list);\n}\nlet targetOffset = msg.payload.range[0];\nlet targetSize = msg.payload.range[1] - msg.payload.range[0] + 1;\n// ===============================================================\n\n\n// === PUSHES SLAVE ID ===========================================\npacket.push(msg.payload.id);\n// ===============================================================\n\n\n// === DEFINES WITH MODBUS FUNCTION IS REQUIRED ==================\n//                    rmbo  rmbi  rmno  rmni               \nconst rMbFunctions = [0x01, 0x02, 0x03, 0x04];\n\nlet index = 0;\nif (msg.payload.type[0] == 'n')\n    index += 2;\nif (msg.payload.type[1] != 'o')\n    index += 1;\n\npacket.push(rMbFunctions[index]);\n// ===============================================================\n\n\n// === ADDS OFFSET AND RANGE =====================================\nif (msg.payload.hasOwnProperty('range')) {\n\n    let offset = msg.payload.range[0];\n    packet.push((offset >> 8) & 0xFF);\n    packet.push(offset & 0xFF);\n\n    let size = msg.payload.range[1] - msg.payload.range[0] + 1;\n    packet.push((size >> 8) & 0xFF);\n    packet.push(size & 0xFF);\n}\n// ===============================================================\n\n\nmsg.payload = packet;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 340,
+        "wires": [
+            [
+                "ccba98d01b5c7037"
+            ]
+        ]
+    },
+    {
+        "id": "6c466a7dc2ce146f",
+        "type": "mqtt out",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "dec28d5816953c3b",
+        "x": 510,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "2e23ab31e10c6384",
+        "type": "inject",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 960,
+        "y": 220,
+        "wires": [
+            [
+                "73c93e4e11df81a7"
+            ]
+        ]
+    },
+    {
+        "id": "73c93e4e11df81a7",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "function 1",
+        "func": "global.set('taskInProgress', false);",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 220,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "5c52febb781572e1",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "flowControl",
+        "func": "if (global.get(\"taskInProgress\") && !msg.payload.hasOwnProperty('message')) {\n    msg.payload.message = 'Another request is being processed';\n    msg.payload.status = 'Busy'\n    return node.send([msg, null]);\n}\n\nelse if (!global.get(\"taskInProgress\") && !msg.payload.hasOwnProperty('message')) {\n    global.set(\"taskInProgress\", true);\n    return node.send([null, msg]);\n}\n\nelse  {\n    return node.send([null, null]);\n}",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "// Code added here will be run once\n// whenever the node is started.\nflow.set(\"taskInProgress\", false);",
+        "finalize": "",
+        "libs": [],
+        "x": 350,
+        "y": 280,
+        "wires": [
+            [
+                "6c466a7dc2ce146f"
+            ],
+            [
+                "38988c30a467d06b"
+            ]
+        ]
+    },
+    {
+        "id": "2047dd06df8c3848",
+        "type": "debug",
+        "z": "8c8e81caf2f0b83d",
+        "name": "incomingRequest",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 295,
+        "y": 320,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "81e84776e462acd7",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "validateResponse",
+        "func": "let payload = [...Array.from(Buffer.from(msg.payload))];\n\n// Understand that the packet came from the esp32\nif (payload[0] === 255) {\n    payload.shift(); // Remove flow control byte\n    \n    // If it can convert the list into a json, then an error has happend on the esp\n    try {\n        let payloadJson = JSON.parse((String.fromCharCode(...payload)).replace(/\\0/g, ''));\n        \n        console.log(\"incoming:\", payloadJson);\n\n        msg.payload = payloadJson;\n        msg.payload.status = 'Error';\n        msg.payload.message = 'The modbus device could not be accessed';\n        node.send([msg, null]);\n    }\n\n    // If the payload could not be parsed, then the esp has return the modbus response as a buffer\n    catch (error) {\n        msg.payload = payload;\n        node.send([null, msg]);\n    }\n    \n    finally {\n        global.set('taskInProgress', false);\n    }\n\n    return;\n}\nelse\n    return node.send([null, null]);",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 500,
+        "wires": [
+            [
+                "1825185614cbd0fb"
+            ],
+            [
+                "16307ecbe97b558a"
+            ]
+        ]
+    },
+    {
+        "id": "866a5dea1d44db59",
+        "type": "debug",
+        "z": "8c8e81caf2f0b83d",
+        "name": "outgoingResponse",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1115,
+        "y": 520,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "ccba98d01b5c7037",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "redirectToESP",
+        "func": "/**\n * Modify an MQTT topic by replacing its last segment with a new segment.\n * \n * @param {string} incomingTopic - The original MQTT topic.\n * @param {string} newSegment - The new segment to replace the last segment.\n * @returns {string} - The modified MQTT topic.\n */\nfunction redirectMessage(incomingTopic, newSegment) {\n    let topicSegments = incomingTopic.split('/');\n    topicSegments[topicSegments.length - 1] = newSegment;\n    \n    return topicSegments.join('/');\n}\n\nmsg.topic = redirectMessage(msg.topic, 'mbbus');\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 360,
+        "wires": [
+            [
+                "d17f7402ac4e8e0b",
+                "c4bff5212a89e654"
+            ]
+        ]
+    },
+    {
+        "id": "c4bff5212a89e654",
+        "type": "debug",
+        "z": "8c8e81caf2f0b83d",
+        "name": "outgoingRequest",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1275,
+        "y": 360,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "03c565dca1315328",
+        "type": "debug",
+        "z": "8c8e81caf2f0b83d",
+        "name": "incomingResponse",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 295,
+        "y": 540,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "1825185614cbd0fb",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "redirectToClient",
+        "func": "/**\n * Modify an MQTT topic by replacing its last segment with a new segment.\n * \n * @param {string} incomingTopic - The original MQTT topic.\n * @param {string} newSegment - The new segment to replace the last segment.\n * @returns {string} - The modified MQTT topic.\n */\nfunction redirectMessage(incomingTopic, newSegment) {\n    let topicSegments = incomingTopic.split('/');\n    topicSegments[topicSegments.length - 1] = newSegment;\n    \n    return topicSegments.join('/');\n}\n\nmsg.topic = redirectMessage(msg.topic, 'request');\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 580,
+        "y": 460,
+        "wires": [
+            [
+                "f730da7da94345da"
+            ]
+        ]
+    },
+    {
+        "id": "b2601c08a0adad3d",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "decodeReadingMbPacket",
+        "func": "let lastRequest = global.get('lastRequest');\n\nlet data = []\n\n// boolean decoding\nif ([1, 2].includes(msg.payload[1])) {\n    for (let byte = 0; byte < msg.payload[2]; byte++)\n        for (let bit = 0; bit < 8; bit++)\n            data.push((msg.payload[3 + byte] >> bit) & 0x01)\n}\n// numeric decoding\nelse if ([3, 4].includes(msg.payload[1])) {\n    for (let byte = 0; byte < msg.payload[2]; byte+=2)\n        data.push((msg.payload[3 + byte] << 8) | msg.payload[4 + byte]);\n}\n\n// Filter for requested data in list parameter\nif (lastRequest.hasOwnProperty('list')) {\n    const min = Math.min(...lastRequest.list);\n    const requestedIndexes = lastRequest.list.map(value => value - min);    \n    data = requestedIndexes.map(index => data[index]);\n}\n\nmsg.payload = lastRequest;\nmsg.payload.response = data;\nmsg.payload.status = 'Done';\nmsg.payload.message = 'Successfully read requested data';\n\nconsole.log(msg);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 750,
+        "y": 520,
+        "wires": [
+            [
+                "217501dc959567c2"
+            ]
+        ]
+    },
+    {
+        "id": "e89ef38708117b63",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "decodeWritingMbPacket",
+        "func": "let lastRequest = global.get('lastRequest');\n\nmsg.payload = lastRequest;\n//msg.payload.response = data;\n\nmsg.payload.status = 'Done';\nmsg.payload.message = 'Successfully wrote requested data';\n\nconsole.log(msg);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 750,
+        "y": 560,
+        "wires": [
+            [
+                "217501dc959567c2"
+            ]
+        ]
+    },
+    {
+        "id": "217501dc959567c2",
+        "type": "function",
+        "z": "8c8e81caf2f0b83d",
+        "name": "redirectToClient",
+        "func": "/**\n * Modify an MQTT topic by replacing its last segment with a new segment.\n * \n * @param {string} incomingTopic - The original MQTT topic.\n * @param {string} newSegment - The new segment to replace the last segment.\n * @returns {string} - The modified MQTT topic.\n */\nfunction redirectMessage(incomingTopic, newSegment) {\n    let topicSegments = incomingTopic.split('/');\n    topicSegments[topicSegments.length - 1] = newSegment;\n    \n    return topicSegments.join('/');\n}\nmsg.topic = redirectMessage(msg.topic, 'request');\n\nconsole.log(msg.topic);\n\nglobal.set(\"lastRequest\", null);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 540,
+        "wires": [
+            [
+                "866a5dea1d44db59",
+                "62892a57717fbec6"
+            ]
+        ]
+    },
+    {
+        "id": "16307ecbe97b558a",
+        "type": "switch",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "property": "payload",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "jsonata_exp",
+                "v": "payload[1] in [1, 2, 3, 4]",
+                "vt": "jsonata"
+            },
+            {
+                "t": "jsonata_exp",
+                "v": "payload[1] in [5, 6, 15, 16]",
+                "vt": "jsonata"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 550,
+        "y": 540,
+        "wires": [
+            [
+                "b2601c08a0adad3d"
+            ],
+            [
+                "e89ef38708117b63"
+            ]
+        ]
+    },
+    {
+        "id": "62892a57717fbec6",
+        "type": "mqtt out",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "dec28d5816953c3b",
+        "x": 1190,
+        "y": 560,
+        "wires": []
+    },
+    {
+        "id": "f730da7da94345da",
+        "type": "mqtt out",
+        "z": "8c8e81caf2f0b83d",
+        "name": "",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "dec28d5816953c3b",
+        "x": 750,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "4ac8207d506f04c3",
+        "type": "debug",
+        "z": "8c8e81caf2f0b83d",
+        "name": "debug 4",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1120,
+        "y": 400,
+        "wires": []
+    }
+]
